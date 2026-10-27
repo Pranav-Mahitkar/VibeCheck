@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1720">
+<title>VibeCheck — phone vibration &amp; level inspector</title>
+<style>
+:root{--bg:#0f1720;--panel:#18222e;--panel2:#1f2c3a;--ink:#e9eef5;--mut:#93a3b5;--line:#2b394a;
+ --ok:#2fbf71;--warn:#f0b429;--bad:#ef5350;--acc:#4da3ff;--x:#ff7a59;--y:#4fd1c5;--z:#a78bfa}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+#app{max-width:560px;margin:0 auto;padding:10px 12px calc(84px + env(safe-area-inset-bottom));padding-top:calc(10px + env(safe-area-inset-top))}
+header{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+.brand{font-weight:800;font-size:19px;letter-spacing:.2px}.brand span{color:var(--acc)}
+#sensorInfo{font-size:12px;color:var(--mut);text-align:right}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin:10px 0}
+.card h2{font-size:14px;margin:0 0 6px;color:var(--mut);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+button{font:inherit;border:0;border-radius:12px;padding:12px 14px;background:var(--acc);color:#04121f;font-weight:700;width:100%}
+button.ghost{background:var(--panel2);color:var(--ink);border:1px solid var(--line)}
+button.small{padding:8px 10px;font-size:13px;width:auto}
+button:disabled{opacity:.5}
+.row{display:flex;gap:8px}.row>*{flex:1}
+input,select{font:inherit;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px;width:100%}
+canvas{width:100%;display:block;background:#0c131b;border-radius:10px}
+.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.m{background:var(--panel2);border-radius:10px;padding:8px;text-align:center}
+.m b{display:block;font-size:20px;font-variant-numeric:tabular-nums}.m span{font-size:11.5px;color:var(--mut)}
+#vStatus{border-radius:14px;padding:12px;text-align:center;background:var(--panel2);border:2px solid var(--line)}
+#vStatus .w{font-size:26px;font-weight:800;letter-spacing:.5px}
+#vStatus .big{font-size:40px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1}
+#vStatus .s{font-size:13px;color:var(--mut)}
+#vStatus.ok{border-color:var(--ok)}#vStatus.ok .w{color:var(--ok)}
+#vStatus.warn{border-color:var(--warn)}#vStatus.warn .w{color:var(--warn)}
+#vStatus.bad{border-color:var(--bad)}#vStatus.bad .w{color:var(--bad)}
+.bar{height:8px;background:var(--panel2);border-radius:6px;overflow:hidden;margin-top:8px}.bar i{display:block;height:100%;width:0;background:var(--acc)}
+.legend{font-size:12px;color:var(--mut);display:flex;gap:12px;flex-wrap:wrap;margin-top:4px}.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px}
+#demoBanner{background:#6b2d00;color:#ffd9b8;border-radius:10px;padding:8px 10px;font-weight:700;text-align:center;margin:6px 0}
+nav#tabs{position:fixed;left:0;right:0;bottom:0;background:#0b1118;border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom);z-index:5}
+nav#tabs button{flex:1;background:transparent;color:var(--mut);border-radius:0;padding:12px 4px;font-size:13px}
+nav#tabs button.on{color:var(--acc);box-shadow:inset 0 3px 0 var(--acc)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}th,td{border-bottom:1px solid var(--line);padding:5px 4px;text-align:left}th{color:var(--mut);font-weight:600}
+.sub{color:var(--mut);font-size:13px}.hint{font-size:13px;color:var(--mut);margin-top:6px}
+#lvlState{text-align:center;font-size:18px;font-weight:700;margin:6px 0}
+.ok{color:var(--ok)}.warnc{color:var(--warn)}.bad{color:var(--bad)}
+ul,ol{padding-left:20px;margin:6px 0}li{margin:3px 0}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px dashed var(--line)}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">Vibe<span>Check</span> <span style="font-size:12px;color:var(--mut);font-weight:500">vibration &amp; level inspector</span></div>
+    <div id="sensorInfo">sensors off</div>
+  </header>
+  <div id="demoBanner" hidden>DEMO MODE: simulated numbers, not from your phone</div>
+
+  <div class="card" id="startCard">
+    <h2>Start</h2>
+    <p style="margin:0 0 8px">Measures machine vibration and surface tilt with your phone’s accelerometer. Your phone will ask for motion-sensor permission.</p>
+    <button id="btnStart">Start sensors</button>
+    <div style="height:8px"></div>
+    <button id="btnDemo" class="ghost">Try demo (simulated, no sensor)</button>
+    <div class="hint" id="startMsg"></div>
+  </div>
+
+  <!-- VIBRATION -->
+  <section id="tab-vib">
+    <div id="vStatus"><div class="w" id="vWord">—</div><div class="big" id="vBig">–</div><div class="s" id="vSub">Start the sensors, then rest the phone flat on the machine.</div></div>
+    <div class="card">
+      <div class="metrics">
+        <div class="m"><b id="mVel">–</b><span>velocity RMS mm/s<br>(2–<span class="nq">30</span> Hz, indicative)</span></div>
+        <div class="m"><b id="mPeak">–</b><span>peak accel.<br>m/s² (last 2 s)</span></div>
+        <div class="m"><b id="mFreq">–</b><span id="mRpm">dominant Hz</span></div>
+      </div>
+    </div>
+    <div class="card"><h2>Waveform, last 4 s (x · y · z)</h2><canvas id="cWave" height="120"></canvas>
+      <div class="legend"><span><i style="background:var(--x)"></i>x</span><span><i style="background:var(--y)"></i>y</span><span><i style="background:var(--z)"></i>z</span><span id="waveScale"></span></div></div>
+    <div class="card"><h2>Spectrum: which frequency is shaking</h2><canvas id="cSpec" height="150"></canvas>
+      <div class="legend"><span><i style="background:var(--acc)"></i>now</span><span><i style="background:var(--warn)"></i>saved baseline</span><span>m/s² RMS vs Hz</span></div></div>
+    <div class="card"><h2>Trend (RMS acceleration)</h2><canvas id="cTrend" height="110"></canvas>
+      <div class="legend"><span><i style="background:var(--acc)"></i>RMS</span><span><i style="background:var(--warn)"></i>1.5× baseline</span><span><i style="background:var(--bad)"></i>2.5× baseline</span></div></div>
+    <div class="card"><h2>Take a measurement</h2>
+      <input id="label" value="Machine 1" aria-label="Label for this measurement" maxlength="40">
+      <div class="hint">Place the phone flat, screen up, on the machine housing. Do not hold it. A 3-second countdown lets your hand settle, then it records 12 s.</div>
+      <div style="height:8px"></div>
+      <div class="row"><button id="btnMeasure">Measure &amp; log</button><button id="btnBase" class="ghost">Save as baseline</button></div>
+      <div class="bar"><i id="prog"></i></div><div class="hint" id="measMsg"></div>
+      <div id="vResult"></div>
+    </div>
+  </section>
+
+  <!-- LEVEL -->
+  <section id="tab-lvl" hidden>
+    <div class="card"><h2>Spirit level</h2>
+      <canvas id="cBubble" height="300"></canvas>
+      <div id="lvlState">–</div>
+      <div class="metrics">
+        <div class="m"><b id="lX">–</b><span>x tilt °</span></div>
+        <div class="m"><b id="lY">–</b><span>y tilt °</span></div>
+        <div class="m"><b id="lT">–</b><span>total °</span></div>
+      </div>
+      <div class="kv" style="margin-top:8px"><span class="sub">Slope</span><b id="lSlope">–</b></div>
+      <div class="hint" id="lHint">Lay the phone flat, screen up.</div>
+      <div class="row" style="margin-top:8px">
+        <label class="sub">Range<select id="lRange"><option value="1">±1°</option><option value="3" selected>±3°</option><option value="10">±10°</option></select></label>
+        <label class="sub">Tolerance °<input id="lTol" type="number" min="0.05" step="0.05" value="0.5" inputmode="decimal"></label>
+      </div>
+      <div class="row" style="margin-top:8px"><button id="btnZero" class="ghost">Zero here</button><button id="btnHold" class="ghost">Hold</button></div>
+      <div style="height:8px"></div>
+      <button id="btnFlip" class="ghost">Flip-calibrate (removes sensor offset)</button>
+      <div class="hint" id="flipMsg"></div>
+    </div>
+  </section>
+
+  <!-- LOG -->
+  <section id="tab-log" hidden>
+    <div class="card"><h2>Measurement log</h2>
+      <div class="scroll" style="overflow-x:auto"><table id="logTable"></table></div>
+      <div class="row" style="margin-top:10px"><button id="btnCsv" class="ghost">Download CSV</button><button id="btnCopy" class="ghost">Copy CSV</button><button id="btnClear" class="ghost">Clear</button></div>
+      <div class="hint" id="logMsg"></div>
+    </div>
+    <div class="card"><h2>Baseline</h2><div id="baseInfo" class="sub">None saved.</div></div>
+  </section>
+
+  <!-- HELP -->
+  <section id="tab-help" hidden>
+    <div class="card"><h2>Why this is useful</h2>
+      <p style="margin:0">A slowly changing machine problem (loose mount, worn bearing, a tool that slows when hot) often shows up as <b>more vibration or a new frequency</b> before it stops the line. This turns any phone into a quick check: record a <b>baseline when the machine is healthy</b>, then compare later rounds against it. It also checks that a base is level before you bolt a machine down.</p></div>
+    <div class="card"><h2>How to use: vibration</h2>
+      <ol>
+        <li>Press <b>Start sensors</b>. Rest the phone <b>flat, screen up</b> on a rigid part of the machine (housing, base plate), not on a cover or cable.</li>
+        <li>With the machine healthy: <b>Save as baseline</b>. Keep the same spot and orientation every time.</li>
+        <li>Later: <b>Measure &amp; log</b>. The status compares RMS with the baseline: <span class="ok">OK</span> below 1.5×, <span class="warnc">WATCH</span> 1.5–2.5×, <span class="bad">ALERT</span> above 2.5×. These are my rule-of-thumb limits, not a standard.</li>
+        <li>Read the spectrum: a new or taller peak shows <i>which rotating part</i> (Hz × 60 = rpm) is responsible.</li>
+      </ol></div>
+    <div class="card"><h2>How to use: level</h2>
+      <ol><li>Lay the phone flat on the surface, screen up; the bubble moves toward the high side.</li>
+      <li>For better accuracy press <b>Flip-calibrate</b>: measure, turn the phone 180° on the same spot, measure again. The average is the phone’s own offset; half the difference is the true surface tilt.</li></ol></div>
+    <div class="card"><h2>Limits you should know</h2>
+      <ul>
+        <li><b>Frequency range.</b> Phone browsers sample about 60 Hz (some phones up to 100–200 Hz), so you can only see vibration <b>below half that rate</b> (≈30 Hz at 60 Hz sampling). Faster vibration can show up as a false low-frequency peak (aliasing). The actual rate is shown at the top. That covers slow machines, 600–1800 rpm shafts, press and conveyor cycles, tool-slowdown pulses, and structure sway.</li>
+        <li><b>Velocity is indicative.</b> It is computed from acceleration over 2 Hz–Nyquist only, so it does <b>not</b> replace an ISO 10816 / 20816 measurement (10–1000 Hz).</li>
+        <li><b>Sensor noise</b> is about 0.01–0.02 m/s². Below that the screen says QUIET.</li>
+        <li><b>Mounting matters.</b> Soft pads, cases and cables change the numbers. Compare only like with like.</li>
+        <li><b>Tilt accuracy</b> is typically ±0.1–0.3° after zeroing or flip-calibration, not a precision-level substitute.</li>
+        <li><b>Safety.</b> Do not hold the phone against moving parts or place it on hot surfaces.</li>
+      </ul></div>
+    <div class="card"><h2>If sensors don’t start</h2>
+      <ul><li>The page must be opened over <b>https</b> (or as a local file in Chrome). Motion sensors are blocked on plain http.</li>
+      <li>iPhone: tap <b>Allow</b> on the motion prompt (Settings → Safari → Motion &amp; Orientation Access).</li>
+      <li>Android: Chrome → site settings → <b>Motion sensors</b> → Allow.</li>
+      <li>No sensor (e.g. desktop)? Use the <b>demo</b>. It is clearly labelled as simulated.</li></ul></div>
+  </section>
+</div>
+
+<nav id="tabs">
+  <button data-tab="vib" class="on">Vibration</button><button data-tab="lvl">Level</button><button data-tab="log">Log</button><button data-tab="help">Help</button>
+</nav>
+
+<script>
+(function(){
+'use strict';
+var $=function(i){return document.getElementById(i);};
+var TWO_PI=2*Math.PI;
+var clock=function(){return performance.now();};
+
+/* ================= DSP ================= */
+function fft(re,im){
+  var n=re.length,j=0,i,k;
+  for(i=1;i<n;i++){var bit=n>>1;for(;j&bit;bit>>=1)j^=bit;j^=bit;
+    if(i<j){var t=re[i];re[i]=re[j];re[j]=t;t=im[i];im[i]=im[j];im[j]=t;}}
+  for(var len=2;len<=n;len<<=1){
+    var ang=-TWO_PI/len,wr=Math.cos(ang),wi=Math.sin(ang),h=len>>1;
+    for(i=0;i<n;i+=len){var cr=1,ci=0;
+      for(k=0;k<h;k++){var a=i+k,b=a+h,xr=re[b]*cr-im[b]*ci,xi=re[b]*ci+im[b]*cr;
+        re[b]=re[a]-xr;im[b]=im[a]-xi;re[a]+=xr;im[a]+=xi;
+        var nc=cr*wr-ci*wi;ci=cr*wi+ci*wr;cr=nc;}}}
+}
+var hannCache={};
+function hann(N){if(hannCache[N])return hannCache[N];var w=new Float64Array(N);for(var i=0;i<N;i++)w[i]=0.5-0.5*Math.cos(TWO_PI*i/(N-1));return hannCache[N]=w;}
+/* axes: three equal-length arrays. Returns per-bin combined RMS "amp" (peak-accurate) and "pw" (power, sums to variance). */
+function spectrum(axes,fs){
+  var N=axes[0].length,w=hann(N),sw=0,sw2=0,i,k;
+  for(i=0;i<N;i++){sw+=w[i];sw2+=w[i]*w[i];}
+  var half=N>>1,amp2=new Float64Array(half),pw=new Float64Array(half);
+  for(var a=0;a<axes.length;a++){
+    var x=axes[a],re=new Float64Array(N),im=new Float64Array(N),m=0;
+    for(i=0;i<N;i++)m+=x[i];m/=N;
+    for(i=0;i<N;i++)re[i]=(x[i]-m)*w[i];
+    fft(re,im);
+    for(k=1;k<half;k++){var p=re[k]*re[k]+im[k]*im[k],A=2*Math.sqrt(p)/sw;amp2[k]+=A*A/2;pw[k]+=2*p/(N*sw2);}
+  }
+  var amp=new Float64Array(half);for(k=0;k<half;k++)amp[k]=Math.sqrt(amp2[k]);
+  return {df:fs/N,N:N,amp:amp,amp2:amp2,pw:pw};
+}
+/* metrics from a spectrum-like {df,amp,pw} */
+function metrics(sp,fmin,vmin){
+  fmin=fmin||1;vmin=vmin||2;var half=sp.pw.length,df=sp.df,k,s=0,v=0;
+  for(k=1;k<half;k++){var f=k*df;if(f>=fmin)s+=sp.pw[k];if(f>=vmin){var w=TWO_PI*f;v+=sp.pw[k]/(w*w);}}
+  var best=-1,bv=0,kmin=Math.max(1,Math.ceil(1.5/df));
+  for(k=kmin;k<half-1;k++){if(sp.amp[k]>bv&&sp.amp[k]>=sp.amp[k-1]&&sp.amp[k]>=sp.amp[k+1]){bv=sp.amp[k];best=k;}}
+  var domF=0,domA=0;
+  if(best>0){var a=sp.amp[best-1],b=sp.amp[best],c=sp.amp[best+1],den=a-2*b+c,d=den!==0?0.5*(a-c)/den:0;
+    if(Math.abs(d)>1)d=0;domF=(best+d)*df;domA=b;}
+  return {arms:Math.sqrt(s),vrms:1000*Math.sqrt(v),domF:domF,domA:domA};
+}
+
+/* ================= sample store ================= */
+var R=4096,S={count:0,fs:60,fsMeas:0,tq:[],lp:[0,0,0],g:[0,0,9.81],init:false,w:0,
+  hp:[new Float64Array(R),new Float64Array(R),new Float64Array(R)],
+  N:256,sp:null,live:{arms:0,vrms:0,peak:0,domF:0,domA:0},trend:[],lastTrendT:0,running:false,demo:false,lastSampleT:0};
+function pushSample(x,y,z,now,interval){
+  S.count++;S.lastSampleT=now;
+  S.tq.push(now);if(S.tq.length>180)S.tq.shift();
+  if(S.tq.length>=30){var dt=S.tq[S.tq.length-1]-S.tq[0];if(dt>0)S.fsMeas=(S.tq.length-1)*1000/dt;}
+  var fs=S.fsMeas;
+  if(!fs&&interval>0)fs=interval>1?1000/interval:1/interval;
+  S.fs=Math.min(500,Math.max(10,fs||60));
+  var v=[x,y,z];
+  if(!S.init){S.lp=v.slice();S.g=v.slice();S.init=true;}
+  var a=1-Math.exp(-TWO_PI*0.7/S.fs),ga=1-Math.exp(-1/(S.fs*0.5));
+  for(var i=0;i<3;i++){S.lp[i]+=a*(v[i]-S.lp[i]);S.hp[i][S.w]=v[i]-S.lp[i];S.g[i]+=ga*(v[i]-S.g[i]);}
+  S.w=(S.w+1)%R;
+}
+function lastN(i,n){var out=new Float64Array(n),p=(S.w-n+R*4)%R;for(var k=0;k<n;k++)out[k]=S.hp[i][(p+k)%R];return out;}
+function chooseN(fs){var n=256;while(n<4*fs&&n<2048)n<<=1;return n;}
+
+/* ================= analysis loop ================= */
+var BASE=null,LOG=[],M={phase:'idle'};
+function load(){try{BASE=JSON.parse(localStorage.getItem('vc_base')||'null');LOG=JSON.parse(localStorage.getItem('vc_log')||'[]');}catch(e){BASE=null;LOG=[];}}
+function save(){try{localStorage.setItem('vc_base',JSON.stringify(BASE));localStorage.setItem('vc_log',JSON.stringify(LOG));}catch(e){}}
+var WATCH=1.5,ALERT=2.5,NOISE=0.015;
+
+function frame(){
+  var N=chooseN(S.fs);if(S.sp&&Math.abs(S.N-N)>0)S.sp=null;S.N=N;
+  if(S.count<N)return null;
+  var axes=[lastN(0,N),lastN(1,N),lastN(2,N)],sp=spectrum(axes,S.fs),m=metrics(sp);
+  var pn=Math.round(2*S.fs),pk=0;
+  for(var k=0;k<pn;k++){var idx=(S.w-1-k+R*4)%R,x=S.hp[0][idx],y=S.hp[1][idx],z=S.hp[2][idx],mag=Math.sqrt(x*x+y*y+z*z);if(mag>pk)pk=mag;}
+  m.peak=pk;return {sp:sp,m:m};
+}
+function tick(){
+  if(!S.running)return;
+  var now=clock(),f=frame();
+  if(f){
+    var al=0.35;
+    if(!S.sp){S.sp={df:f.sp.df,N:f.sp.N,amp2:f.sp.amp2.slice?f.sp.amp2.slice():new Float64Array(f.sp.amp2),pw:new Float64Array(f.sp.pw),amp:new Float64Array(f.sp.amp)};}
+    else{for(var k=0;k<f.sp.pw.length;k++){S.sp.amp2[k]+=al*(f.sp.amp2[k]-S.sp.amp2[k]);S.sp.pw[k]+=al*(f.sp.pw[k]-S.sp.pw[k]);S.sp.amp[k]=Math.sqrt(S.sp.amp2[k]);}S.sp.df=f.sp.df;}
+    var m=metrics(S.sp);m.peak=f.m.peak;S.live=m;
+    if(now-S.lastTrendT>=1000){S.lastTrendT=now;S.trend.push({t:now,a:m.arms});if(S.trend.length>900)S.trend.shift();}
+    measureStep(now,f);
+  }
+  updateReadouts();
+}
+function nyq(){return S.fs/2;}
+
+/* ================= measurement state machine ================= */
+var COUNT=3,CAPTURE=12;
+function startMeasure(mode){
+  if(!S.running){$('measMsg').textContent='Start the sensors first.';return;}
+  if(M.phase!=='idle')return;
+  M={phase:'count',mode:mode,t0:clock(),frames:[],label:($('label').value||'Machine').trim()};
+  $('btnMeasure').disabled=$('btnBase').disabled=true;$('vResult').innerHTML='';
+}
+function measureStep(now,f){
+  if(M.phase==='idle')return;
+  var el=(now-M.t0)/1000,msg=$('measMsg'),prog=$('prog');
+  if(el<COUNT){msg.textContent='Hands off the phone… '+Math.ceil(COUNT-el);prog.style.width='0';return;}
+  var ce=el-COUNT;
+  if(ce<CAPTURE){
+    prog.style.width=(ce/CAPTURE*100)+'%';
+    var settle=S.N/S.fs+0.3;
+    if(ce<settle){msg.textContent='Settling… keep still';}
+    else{msg.textContent='Recording… '+Math.ceil(CAPTURE-ce)+' s';
+      M.frames.push({amp2:new Float64Array(f.sp.amp2),pw:new Float64Array(f.sp.pw),peak:f.m.peak,df:f.sp.df,N:f.sp.N});}
+    return;
+  }
+  finishMeasure();
+}
+function finishMeasure(){
+  var fr=M.frames,mode=M.mode,label=M.label;M.phase='idle';
+  $('btnMeasure').disabled=$('btnBase').disabled=false;$('prog').style.width='0';
+  if(fr.length<3){$('measMsg').textContent='Too few valid samples. Check the sensor rate and try again.';return;}
+  var half=fr[0].pw.length,amp2=new Float64Array(half),pw=new Float64Array(half),peak=0,df=fr[0].df,k,i;
+  for(i=0;i<fr.length;i++){for(k=0;k<half;k++){amp2[k]+=fr[i].amp2[k]/fr.length;pw[k]+=fr[i].pw[k]/fr.length;}if(fr[i].peak>peak)peak=fr[i].peak;}
+  var amp=new Float64Array(half);for(k=0;k<half;k++)amp[k]=Math.sqrt(amp2[k]);
+  var sp={df:df,amp:amp,pw:pw},m=metrics(sp);
+  var res={t:new Date().toISOString(),label:label,type:mode==='base'?'BASELINE':'measure',fs:+S.fs.toFixed(1),nyq:+nyq().toFixed(1),
+    arms:m.arms,vrms:m.vrms,peak:peak,domF:m.domF,rpm:m.domF*60,frames:fr.length,demo:S.demo};
+  var grid=toGrid(amp,df);
+  if(mode==='base'){BASE={arms:m.arms,vrms:m.vrms,domF:m.domF,spec:grid,nyq:nyq(),label:label,t:res.t,demo:S.demo};res.ratio=1;res.status='BASELINE';}
+  else{var st=statusFor(m.arms);res.ratio=st.ratio;res.status=st.word;}
+  LOG.unshift(res);if(LOG.length>300)LOG.pop();save();renderLog();renderResult(res);
+  $('measMsg').textContent=mode==='base'?'Baseline saved.':'Logged.';
+}
+function toGrid(amp,df){var g=[],step=0.25,fmax=Math.min(100,(amp.length-1)*df);for(var f=0;f<=fmax;f+=step){var p=f/df,i=Math.floor(p),t=p-i,a=amp[i]||0,b=amp[Math.min(i+1,amp.length-1)]||0;g.push(a+(b-a)*t);}return g;}
+function statusFor(arms){
+  if(arms<NOISE)return {word:'QUIET',cls:'',ratio:null};
+  if(!BASE)return {word:'NO BASELINE',cls:'',ratio:null};
+  var r=arms/Math.max(BASE.arms,0.02);
+  return r>=ALERT?{word:'ALERT',cls:'bad',ratio:r}:r>=WATCH?{word:'WATCH',cls:'warn',ratio:r}:{word:'OK',cls:'ok',ratio:r};
+}
+
+/* ================= readouts ================= */
+function fmt(v,d){return (isFinite(v)?v:0).toFixed(d);}
+function updateReadouts(){
+  var L=S.live,st=statusFor(L.arms),box=$('vStatus');
+  box.className=st.cls||'';
+  $('vWord').textContent=st.word;
+  $('vBig').textContent=fmt(L.arms,3)+' m/s²';
+  var sub;
+  if(st.word==='QUIET')sub='At the sensor noise floor: no machine vibration detected here.';
+  else if(!BASE)sub='RMS acceleration now. Save a baseline on a healthy machine to get OK/WATCH/ALERT.';
+  else sub='×'+fmt(st.ratio,2)+' of baseline ('+fmt(BASE.arms,3)+' m/s²'+(BASE.demo?', demo':'')+')';
+  $('vSub').textContent=sub;
+  $('mVel').textContent=fmt(L.vrms,2);$('mPeak').textContent=fmt(L.peak,2);
+  var q=document.getElementsByClassName('nq');for(var i=0;i<q.length;i++)q[i].textContent=Math.round(nyq());
+  if(L.domF>0&&L.arms>=NOISE){$('mFreq').textContent=fmt(L.domF,1)+' Hz';$('mRpm').innerHTML='dominant<br>≈ '+Math.round(L.domF*60)+' rpm';}
+  else{$('mFreq').textContent='–';$('mRpm').textContent='dominant freq';}
+  $('sensorInfo').textContent=S.running?((S.demo?'DEMO ':'')+fmt(S.fs,0)+' Hz sampling · max '+fmt(nyq(),0)+' Hz visible'):'sensors off';
+}
+function renderResult(r){
+  var cls=r.status==='ALERT'?'bad':r.status==='WATCH'?'warnc':r.status==='OK'?'ok':'';
+  $('vResult').innerHTML='<div style="margin-top:10px"><div class="kv"><span>Result</span><b class="'+cls+'">'+r.status+(r.ratio&&r.type!=='BASELINE'?' (×'+fmt(r.ratio,2)+')':'')+'</b></div>'+
+   '<div class="kv"><span>RMS acceleration</span><b>'+fmt(r.arms,3)+' m/s²</b></div><div class="kv"><span>Velocity RMS (indicative)</span><b>'+fmt(r.vrms,2)+' mm/s</b></div>'+
+   '<div class="kv"><span>Peak</span><b>'+fmt(r.peak,2)+' m/s²</b></div><div class="kv"><span>Dominant</span><b>'+(r.domF?fmt(r.domF,1)+' Hz ≈ '+Math.round(r.rpm)+' rpm':'–')+'</b></div>'+
+   '<div class="kv"><span>Valid analysis windows</span><b>'+r.frames+' at '+fmt(r.fs,0)+' Hz</b></div>'+(r.demo?'<div class="bad" style="margin-top:6px">Demo data: simulated.</div>':'')+'</div>';
+}
+function renderLog(){
+  var h='<tr><th>Time</th><th>Label</th><th>RMS</th><th>×base</th><th>Hz</th><th></th></tr>';
+  if(!LOG.length)h+='<tr><td colspan="6" class="sub">No measurements yet.</td></tr>';
+  LOG.slice(0,60).forEach(function(r){var d=new Date(r.t),ts=d.toLocaleDateString(undefined,{day:'2-digit',month:'short'})+' '+d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
+    h+='<tr><td>'+ts+'</td><td>'+esc(r.label)+(r.demo?' (demo)':'')+'</td><td>'+fmt(r.arms,3)+'</td><td>'+(r.ratio?fmt(r.ratio,2):'–')+'</td><td>'+(r.domF?fmt(r.domF,1):'–')+'</td><td>'+r.status+'</td></tr>';});
+  $('logTable').innerHTML=h;
+  $('baseInfo').innerHTML=BASE?('<b>'+esc(BASE.label)+'</b>: '+fmt(BASE.arms,3)+' m/s² RMS, dominant '+(BASE.domF?fmt(BASE.domF,1)+' Hz':'–')+', saved '+new Date(BASE.t).toLocaleString()+(BASE.demo?' (demo)':'')+'. <button class="small ghost" id="btnDelBase">Delete baseline</button>'):'None saved.';
+  var b=$('btnDelBase');if(b)b.onclick=function(){BASE=null;save();renderLog();};
+}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function csv(){
+  var rows=[['time_iso','label','type','sample_rate_hz','nyquist_hz','rms_m_s2','velocity_rms_mm_s','peak_m_s2','dominant_hz','rpm','ratio_to_baseline','status','demo_data']];
+  LOG.forEach(function(r){rows.push([r.t,'"'+String(r.label).replace(/"/g,'""')+'"',r.type,r.fs,r.nyq,fmt(r.arms,4),fmt(r.vrms,3),fmt(r.peak,3),fmt(r.domF,2),Math.round(r.rpm||0),r.ratio?fmt(r.ratio,3):'',r.status,r.demo?'yes':'no']);});
+  return rows.map(function(r){return r.join(',');}).join('\n');
+}
+
+/* ================= drawing ================= */
+var cv={};
+function setup(c){var d=window.devicePixelRatio||1,w=c.clientWidth,h=parseInt(c.getAttribute('height'),10);if(c._w!==w*d){c.width=w*d;c.height=h*d;c._w=w*d;}var g=c.getContext('2d');g.setTransform(d,0,0,d,0,0);return {g:g,w:w,h:h};}
+var wv={scale:0.2},spY=0.1;
+function drawWave(){
+  var o=setup($('cWave')),g=o.g,W=o.w,H=o.h;g.clearRect(0,0,W,H);
+  var n=Math.round(4*S.fs);if(!S.running||S.count<n){txt(g,'waiting for data…',W/2,H/2,'center');return;}
+  var cols=['#ff7a59','#4fd1c5','#a78bfa'],data=[lastN(0,n),lastN(1,n),lastN(2,n)],mx=0.05,i,k;
+  for(i=0;i<3;i++)for(k=0;k<n;k++){var a=Math.abs(data[i][k]);if(a>mx)mx=a;}
+  wv.scale+=(mx*1.15-wv.scale)*0.2;var sc=H/2/wv.scale;
+  g.strokeStyle='#2b394a';g.beginPath();g.moveTo(0,H/2);g.lineTo(W,H/2);g.stroke();
+  for(i=0;i<3;i++){g.strokeStyle=cols[i];g.lineWidth=1.2;g.beginPath();for(k=0;k<n;k++){var x=k/(n-1)*W,y=H/2-data[i][k]*sc;k?g.lineTo(x,y):g.moveTo(x,y);}g.stroke();}
+  $('waveScale').textContent='±'+fmt(wv.scale,2)+' m/s²';
+}
+function txt(g,s,x,y,al,col,sz){g.fillStyle=col||'#93a3b5';g.font=(sz||12)+'px system-ui';g.textAlign=al||'left';g.fillText(s,x,y);}
+function drawSpec(){
+  var o=setup($('cSpec')),g=o.g,W=o.w,H=o.h,L=34,B=18,T=8;g.clearRect(0,0,W,H);
+  if(!S.running||!S.sp){txt(g,'waiting for data…',W/2,H/2,'center');return;}
+  var sp=S.sp,half=sp.amp.length,df=sp.df,fmax=(half-1)*df,mx=0.04,k;
+  for(k=1;k<half;k++)if(sp.amp[k]>mx)mx=sp.amp[k];
+  if(BASE&&BASE.spec)for(k=0;k<BASE.spec.length;k++)if(BASE.spec[k]>mx)mx=BASE.spec[k];
+  spY+=(mx*1.2-spY)*0.15;var X=function(f){return L+f/fmax*(W-L-4);},Y=function(a){return H-B-a/spY*(H-B-T);};
+  g.strokeStyle='#2b394a';g.fillStyle='#93a3b5';g.font='10px system-ui';g.textAlign='center';
+  var step=fmax>60?20:fmax>25?5:2;
+  for(var f=0;f<=fmax;f+=step){g.beginPath();g.moveTo(X(f),T);g.lineTo(X(f),H-B);g.stroke();g.fillText(f+'',X(f),H-5);}
+  g.textAlign='right';[0,0.5,1].forEach(function(p){var a=spY*p;g.fillText(a.toFixed(2),L-3,Y(a)+3);g.beginPath();g.moveTo(L,Y(a));g.lineTo(W-4,Y(a));g.stroke();});
+  if(BASE&&BASE.spec){g.strokeStyle='#f0b429';g.setLineDash([4,3]);g.lineWidth=1.6;g.beginPath();for(k=0;k<BASE.spec.length;k++){var fx=k*0.25;if(fx>fmax)break;k?g.lineTo(X(fx),Y(BASE.spec[k])):g.moveTo(X(fx),Y(BASE.spec[k]));}g.stroke();g.setLineDash([]);}
+  g.fillStyle='rgba(77,163,255,.25)';g.strokeStyle='#4da3ff';g.lineWidth=1.6;g.beginPath();g.moveTo(X(df),Y(0));
+  for(k=1;k<half;k++)g.lineTo(X(k*df),Y(sp.amp[k]));g.lineTo(X((half-1)*df),Y(0));g.closePath();g.fill();g.beginPath();for(k=1;k<half;k++){k===1?g.moveTo(X(k*df),Y(sp.amp[k])):g.lineTo(X(k*df),Y(sp.amp[k]));}g.stroke();
+  var L2=S.live;if(L2.domF>0&&L2.arms>=NOISE){g.fillStyle='#fff';g.textAlign=L2.domF>fmax*0.7?'right':'left';g.font='11px system-ui';g.fillText(fmt(L2.domF,1)+' Hz',X(L2.domF)+(L2.domF>fmax*0.7?-4:4),Math.max(T+10,Y(L2.domA)-4));}
+}
+function drawTrend(){
+  var o=setup($('cTrend')),g=o.g,W=o.w,H=o.h,L=34,B=14,T=6;g.clearRect(0,0,W,H);
+  var d=S.trend;if(d.length<2){txt(g,'collecting…',W/2,H/2,'center');return;}
+  var t1=d[d.length-1].t,t0=Math.max(d[0].t,t1-600000),mx=0.05,k;
+  d.forEach(function(p){if(p.t>=t0&&p.a>mx)mx=p.a;});if(BASE)mx=Math.max(mx,BASE.arms*2.8);mx*=1.1;
+  var X=function(t){return L+(t-t0)/(t1-t0||1)*(W-L-4);},Y=function(a){return H-B-a/mx*(H-B-T);};
+  g.strokeStyle='#2b394a';g.fillStyle='#93a3b5';g.font='10px system-ui';g.textAlign='right';
+  [0,0.5,1].forEach(function(p){g.beginPath();g.moveTo(L,Y(mx*p));g.lineTo(W-4,Y(mx*p));g.stroke();g.fillText((mx*p).toFixed(2),L-3,Y(mx*p)+3);});
+  g.textAlign='left';g.fillText(Math.round((t1-t0)/1000)+' s ago',L,H-2);g.textAlign='right';g.fillText('now',W-4,H-2);
+  if(BASE){[[WATCH,'#f0b429'],[ALERT,'#ef5350']].forEach(function(p){g.strokeStyle=p[1];g.setLineDash([5,4]);g.beginPath();g.moveTo(L,Y(BASE.arms*p[0]));g.lineTo(W-4,Y(BASE.arms*p[0]));g.stroke();g.setLineDash([]);});}
+  g.strokeStyle='#4da3ff';g.lineWidth=2;g.beginPath();var first=true;
+  d.forEach(function(p){if(p.t<t0)return;first?g.moveTo(X(p.t),Y(p.a)):g.lineTo(X(p.t),Y(p.a));first=false;});g.stroke();
+}
+
+/* ================= level ================= */
+var LV={zr:0,zp:0,hold:false,held:null,fstep:0,m1:null,busy:false};
+function rawAngles(){
+  var s=S.g[2]<0?-1:1,gx=S.g[0]*s,gy=S.g[1]*s,gz=S.g[2]*s,mag=Math.sqrt(gx*gx+gy*gy+gz*gz)||1;
+  return {r:Math.atan2(gx,gz)*180/Math.PI,p:Math.atan2(gy,gz)*180/Math.PI,flat:gz>0.9*mag&&mag>7,mag:mag};
+}
+function levelValues(){
+  var a=rawAngles(),r=a.r-LV.zr,p=a.p-LV.zp,tot=Math.sqrt(Math.pow(Math.tan(r*Math.PI/180),2)+Math.pow(Math.tan(p*Math.PI/180),2));
+  return {r:r,p:p,tot:Math.atan(tot)*180/Math.PI,slope:tot*1000,flat:a.flat};
+}
+function drawBubble(){
+  var o=setup($('cBubble')),g=o.g,W=o.w,H=o.h;g.clearRect(0,0,W,H);
+  var v=LV.hold&&LV.held?LV.held:levelValues(),range=+$('lRange').value,tol=Math.max(0.05,+$('lTol').value||0.5);
+  var cx=W/2,cy=H/2,Rr=Math.min(W,H)/2-10,okc=S.running&&v.flat&&v.tot<=tol;
+  g.strokeStyle='#2b394a';g.lineWidth=2;g.beginPath();g.arc(cx,cy,Rr,0,TWO_PI);g.stroke();
+  g.beginPath();g.moveTo(cx-Rr,cy);g.lineTo(cx+Rr,cy);g.moveTo(cx,cy-Rr);g.lineTo(cx,cy+Rr);g.stroke();
+  [1/3,2/3].forEach(function(f){g.beginPath();g.arc(cx,cy,Rr*f,0,TWO_PI);g.stroke();});
+  var tr=Math.min(1,tol/range)*Rr;g.strokeStyle=okc?'#2fbf71':'#4da3ff';g.setLineDash([4,4]);g.beginPath();g.arc(cx,cy,tr,0,TWO_PI);g.stroke();g.setLineDash([]);
+  txt(g,'ring = ±'+tol+'°',cx,cy+Rr-6,'center','#93a3b5',11);txt(g,'edge = '+range+'°',cx,cy-Rr+14,'center','#93a3b5',11);
+  if(!S.running||!v.flat){txt(g,S.running?'Lay the phone flat, screen up':'Start the sensors',cx,cy-Rr/2,'center','#f0b429',14);if(!S.running)return;}
+  var bx=cx+Math.max(-1,Math.min(1,v.r/range))*Rr,by=cy-Math.max(-1,Math.min(1,v.p/range))*Rr;
+  g.fillStyle=okc?'#2fbf71':'#4da3ff';g.beginPath();g.arc(bx,by,15,0,TWO_PI);g.fill();g.strokeStyle='#fff';g.lineWidth=2;g.stroke();
+}
+function updateLevel(){
+  var v=LV.hold&&LV.held?LV.held:levelValues(),tol=Math.max(0.05,+$('lTol').value||0.5);
+  if(!S.running||!v.flat){$('lX').textContent=$('lY').textContent=$('lT').textContent='–';$('lSlope').textContent='–';$('lvlState').textContent=S.running?'Lay the phone flat':'–';$('lvlState').className='';return;}
+  $('lX').textContent=fmt(v.r,2);$('lY').textContent=fmt(v.p,2);$('lT').textContent=fmt(v.tot,2);
+  $('lSlope').textContent=fmt(v.slope,1)+' mm per m';
+  var ok=v.tot<=tol;$('lvlState').textContent=ok?'LEVEL (within ±'+tol+'°)':'NOT LEVEL';$('lvlState').className=ok?'ok':'warnc';
+  var h=[];if(Math.abs(v.r)>=0.05)h.push((v.r>0?'right':'left')+' edge is high by '+fmt(Math.abs(v.r),2)+'°');if(Math.abs(v.p)>=0.05)h.push((v.p>0?'top':'bottom')+' edge is high by '+fmt(Math.abs(v.p),2)+'°');
+  $('lHint').textContent=(h.length?h.join('; ')+'. ':'')+'Edges are relative to the phone, screen up. Phone accuracy ≈ ±0.1–0.3° after zeroing.';
+}
+function avgCapture(ms,cb){
+  var s=[],t0=clock();LV.busy=true;
+  var id=setInterval(function(){var a=rawAngles();s.push(a);if(clock()-t0>=ms){clearInterval(id);LV.busy=false;
+    var n=s.length,mr=0,mp=0,i;for(i=0;i<n;i++){mr+=s[i].r/n;mp+=s[i].p/n;}
+    var sd=0;for(i=0;i<n;i++)sd+=Math.pow(s[i].r-mr,2)+Math.pow(s[i].p-mp,2);sd=Math.sqrt(sd/Math.max(1,n));
+    cb({r:mr,p:mp,sd:sd,flat:s.every(function(x){return x.flat;}),n:n});}},50);
+}
+function flipClick(){
+  if(!S.running){$('flipMsg').textContent='Start the sensors first.';return;}if(LV.busy)return;
+  var msg=$('flipMsg'),btn=$('btnFlip');
+  if(LV.fstep===0){msg.textContent='Step 1: measuring 2 s… keep the phone still.';btn.disabled=true;
+    avgCapture(2000,function(m){btn.disabled=false;
+      if(!m.flat||m.sd>0.15||m.n<10){msg.textContent='Not flat or not still enough (jitter '+fmt(m.sd,2)+'°). Try again.';return;}
+      LV.m1=m;LV.fstep=1;btn.textContent='Step 2: turned 180°: measure';msg.textContent='Step 1 done. Now rotate the phone 180° (top to bottom) on the same spot, then press the button.';});}
+  else{msg.textContent='Step 2: measuring 2 s…';btn.disabled=true;
+    avgCapture(2000,function(m){btn.disabled=false;
+      if(!m.flat||m.sd>0.15||m.n<10){msg.textContent='Not flat or not still enough (jitter '+fmt(m.sd,2)+'°). Try step 2 again.';return;}
+      var a=LV.m1,off={r:(a.r+m.r)/2,p:(a.p+m.p)/2},tr={r:(a.r-m.r)/2,p:(a.p-m.p)/2};
+      LV.zr=off.r;LV.zp=off.p;LV.fstep=0;btn.textContent='Flip-calibrate (removes sensor offset)';
+      msg.innerHTML='Sensor offset removed ('+fmt(off.r,2)+'°, '+fmt(off.p,2)+'°). <b>True surface tilt in the step-1 orientation: x '+fmt(tr.r,2)+'°, y '+fmt(tr.p,2)+'°</b> ('+fmt(Math.sqrt(tr.r*tr.r+tr.p*tr.p)*17.45,1)+' mm/m). Readouts now show tilt relative to a perfectly level phone.';});}
+}
+
+/* ================= sensors ================= */
+var motionHandler=function(e){var a=e.accelerationIncludingGravity;if(!a||a.x==null||a.y==null||a.z==null)return;pushSample(a.x,a.y,a.z,clock(),e.interval);};
+var demoId=null,demoT=0;
+function startDemo(){
+  stopDemo();S.demo=true;$('demoBanner').hidden=false;begin();demoT=0;
+  demoId=setInterval(function(){
+    demoT+=1/60;var t=demoT,k=1+0.5*Math.max(0,Math.sin(t/20)); // amplitude slowly breathes
+    var n=function(){return (Math.random()-0.5)*0.03;};
+    var x=0.35*k*Math.sin(TWO_PI*24.5*t)+0.12*Math.sin(TWO_PI*12.2*t)+n(),y=0.20*k*Math.sin(TWO_PI*24.5*t+1)+n(),z=9.81*Math.cos(0.012)+0.10*Math.sin(TWO_PI*24.5*t+2)+n();
+    pushSample(x+9.81*Math.sin(0.0105),y+9.81*Math.sin(-0.006),z,clock(),16.7);
+  },1000/60);
+}
+function stopDemo(){if(demoId){clearInterval(demoId);demoId=null;}}
+var loopId=null,rafId=null;
+function begin(){
+  S.running=true;S.count=0;S.tq=[];S.fsMeas=0;S.init=false;S.sp=null;S.trend=[];S.lastTrendT=0;
+  $('startCard').hidden=true;
+  if(!loopId)loopId=setInterval(tick,250);
+  if(!rafId)rafId=requestAnimationFrame(draw);
+  try{if(navigator.wakeLock)navigator.wakeLock.request('screen').catch(function(){});}catch(e){}
+}
+function draw(){
+  rafId=requestAnimationFrame(draw);
+  var tab=currentTab;
+  if(tab==='vib'){drawWave();drawSpec();drawTrend();}
+  else if(tab==='lvl'){drawBubble();updateLevel();}
+}
+function startReal(){
+  var msg=$('startMsg');msg.textContent='';
+  S.demo=false;$('demoBanner').hidden=true;stopDemo();
+  var go=function(){
+    window.addEventListener('devicemotion',motionHandler);begin();
+    setTimeout(function(){if(S.running&&!S.demo&&S.count<5){S.running=false;$('startCard').hidden=false;
+      msg.innerHTML='<span class="bad">No sensor data received.</span> Open this page over https (or in Chrome as a file), allow motion sensors for the site, then try again. On a computer without a motion sensor, use the demo.';}},2500);
+  };
+  try{
+    if(typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function'){
+      DeviceMotionEvent.requestPermission().then(function(r){if(r==='granted')go();else msg.innerHTML='<span class="bad">Motion permission denied.</span> Enable Settings → Safari → Motion &amp; Orientation Access, then reload.';}).catch(function(err){msg.textContent='Permission error: '+err;});
+    }else if(typeof DeviceMotionEvent==='undefined'){msg.innerHTML='<span class="bad">This browser has no motion-sensor API.</span> Use a phone browser, or try the demo.';}
+    else go();
+  }catch(err){msg.textContent='Could not start: '+err;}
+}
+
+/* ================= UI wiring ================= */
+var currentTab='vib';
+function showTab(t){currentTab=t;['vib','lvl','log','help'].forEach(function(k){$('tab-'+k).hidden=k!==t;});
+  var b=document.querySelectorAll('#tabs button');for(var i=0;i<b.length;i++)b[i].className=b[i].getAttribute('data-tab')===t?'on':'';
+  if(t==='log')renderLog();window.scrollTo(0,0);}
+(function wire(){
+  load();renderLog();
+  var b=document.querySelectorAll('#tabs button');for(var i=0;i<b.length;i++)(function(x){x.onclick=function(){showTab(x.getAttribute('data-tab'));};})(b[i]);
+  $('btnStart').onclick=startReal;$('btnDemo').onclick=startDemo;
+  $('btnMeasure').onclick=function(){startMeasure('meas');};$('btnBase').onclick=function(){startMeasure('base');};
+  $('btnZero').onclick=function(){if(!S.running)return;var a=rawAngles();LV.zr=a.r;LV.zp=a.p;$('flipMsg').textContent='Zeroed at the current position.';};
+  $('btnHold').onclick=function(){LV.hold=!LV.hold;LV.held=LV.hold?levelValues():null;this.textContent=LV.hold?'Resume':'Hold';};
+  $('btnFlip').onclick=flipClick;
+  $('btnCsv').onclick=function(){if(!LOG.length){$('logMsg').textContent='Nothing to export yet.';return;}
+    var bl=new Blob([csv()],{type:'text/csv'}),u=URL.createObjectURL(bl),a=document.createElement('a');a.href=u;a.download='vibecheck_log.csv';document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(function(){URL.revokeObjectURL(u);},2000);$('logMsg').textContent='CSV downloaded.';};
+  $('btnCopy').onclick=function(){var t=csv();if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(function(){$('logMsg').textContent='Copied.';},function(){$('logMsg').textContent='Copy blocked: use Download.';});else $('logMsg').textContent='Copy not supported: use Download.';};
+  $('btnClear').onclick=function(){if(confirm('Delete all logged measurements? (The baseline is kept.)')){LOG=[];save();renderLog();}};
+  window.addEventListener('resize',function(){['cWave','cSpec','cTrend','cBubble'].forEach(function(i){$(i)._w=0;});});
+})();
+
+/* exposed for automated tests */
+window.VC={fft:fft,spectrum:spectrum,metrics:metrics,pushSample:pushSample,S:S,tick:tick,frame:frame,setClock:function(f){clock=f;},
+  begin:begin,rawAngles:rawAngles,levelValues:levelValues,startMeasure:startMeasure,getLog:function(){return LOG;},getBase:function(){return BASE;},statusFor:statusFor,csv:csv,chooseN:chooseN,setZero:function(r,p){LV.zr=r;LV.zp=p;}};
+})();
+</script>
+</body>
+</html>
